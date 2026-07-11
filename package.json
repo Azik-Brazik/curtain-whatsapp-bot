@@ -1,0 +1,25 @@
+{
+  "name": "whatsapp-curtains-bot",
+  "version": "1.0.0",
+  "description": "AI-консультант для магазина штор в WhatsApp",
+  "main": "src/server.js",
+  "type": "commonjs",
+  "scripts": {
+    "start": "node src/server.js",
+    "dev": "nodemon src/server.js",
+    "seed": "node src/seedCatalog.js"
+  },
+  "dependencies": {
+    "express": "^4.19.2",
+    "dotenv": "^16.4.5",
+    "pg": "^8.12.0",
+    "pgvector": "^0.2.0",
+    "bullmq": "^5.12.0",
+    "ioredis": "^5.4.1",
+    "axios": "^1.7.4",
+    "@anthropic-ai/sdk": "^0.27.0"
+  },
+  "devDependencies": {
+    "nodemon": "^3.1.4"
+  }
+}
