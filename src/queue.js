@@ -38,9 +38,11 @@ const worker = new Worker(
     const customerId = await getOrCreateCustomer(chatId);
     console.log('Клиент найден/создан, id:', customerId);
 
+    // Идемпотентность: если это сообщение уже обработано (WhatsApp может слать дубли) — выходим
     await saveMessage(customerId, 'user', text, messageId);
 
     // Проверяем, не поставлен ли бот на паузу для этого клиента
+    // (менеджер недавно отвечал вручную с телефона)
     const { rows } = await pool.query(
       `SELECT bot_paused_until FROM customers WHERE id = $1`,
       [customerId]
@@ -52,8 +54,21 @@ const worker = new Worker(
     }
 
     console.log('Отправляю запрос в Claude...');
-    const reply = await generateReply(customerId, chatId, text);
-    console.log('Ответ от Claude получен:', reply);
+    let reply;
+    try {
+      reply = await generateReply(customerId, chatId, text);
+      console.log('Ответ от Claude получен:', reply);
+    } catch (err) {
+      // Если Claude совсем не ответил (все попытки retry исчерпаны) —
+      // клиент НЕ должен остаться в тишине. Отправляем вежливое сообщение
+      // и уведомляем менеджера, чтобы он подключился вручную.
+      console.error('Claude не смог ответить после всех попыток:', err.message);
+      reply = 'Извините, у нас небольшая техническая заминка 🙏 Наш менеджер скоро подключится к диалогу и поможет вам.';
+      await sendMessage(
+        process.env.MANAGER_WHATSAPP_ID,
+        `⚠️ Бот не смог ответить клиенту ${chatId} (техническая ошибка). Пожалуйста, ответьте вручную.\nСообщение клиента: "${text}"`
+      );
+    }
 
     await saveMessage(customerId, 'assistant', reply);
     await sendMessage(chatId, reply);
