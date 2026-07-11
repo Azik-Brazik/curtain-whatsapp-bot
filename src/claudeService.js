@@ -99,6 +99,10 @@ async function saveMessage(customerId, role, content, messageId = null) {
   );
 }
 
+function formatPhoneForDisplay(chatId) {
+  return chatId ? chatId.replace('@c.us', '') : chatId;
+}
+
 async function getHistory(customerId) {
      const { rows } = await pool.query(
        `SELECT role, content FROM messages

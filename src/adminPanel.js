@@ -72,7 +72,7 @@ router.get('/orders', checkAuth, async (req, res) => {
             <td>${o.price || '—'} тг</td>
             <td>${o.width_cm || '—'}x${o.height_cm || '—'} см</td>
             <td>${o.address}</td>
-            <td>${o.whatsapp_id}</td>
+            <td>${o.whatsapp_id ? o.whatsapp_id.replace('@c.us', '') : '—'}</td>
             <td class="status-${o.status}">${o.status}</td>
             <td>${new Date(o.created_at).toLocaleString('ru-RU')}</td>
             <td class="actions">
