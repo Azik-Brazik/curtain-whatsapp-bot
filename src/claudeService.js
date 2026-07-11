@@ -102,7 +102,7 @@ async function getHistory(customerId) {
     `SELECT role, content FROM messages
      WHERE customer_id = $1
      ORDER BY created_at DESC
-     LIMIT 20`,
+     LIMIT 10`,
     [customerId]
   );
   return rows.reverse().map((r) => ({ role: r.role, content: r.content }));
@@ -188,8 +188,8 @@ async function createMessageWithRetry(params, attempt = 1) {
   try {
     return await anthropic.messages.create(params);
   } catch (err) {
-    if (err.status === 429 && attempt <= 3) {
-      const waitMs = attempt * 3000; // 3с, 6с, 9с
+    if (err.status === 429 && attempt <= 5) {
+      const waitMs = attempt * 8000;
       console.log(`Claude API: превышен лимит запросов, жду ${waitMs / 1000}с (попытка ${attempt})...`);
       await new Promise((resolve) => setTimeout(resolve, waitMs));
       return createMessageWithRetry(params, attempt + 1);
