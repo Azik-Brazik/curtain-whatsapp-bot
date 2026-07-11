@@ -6,6 +6,9 @@ const { sendMessage } = require('./whatsappService');
 
 const anthropic = new Anthropic({ apiKey: process.env.ANTHROPIC_API_KEY });
 
+// ===== Инструменты, которые модель может "вызывать" =====
+// Это и есть механизм, который превращает бота из "болталки"
+// в консультанта, способного реально оформить заказ.
 const tools = [
   {
     name: 'create_order',
@@ -56,7 +59,7 @@ function buildSystemPrompt(catalogResults) {
     )
     .join('\n');
 
- return `Ты — вежливый и живой консультант компании Master Roll Shtor (Астана), специализирующейся на жалюзи, ролл-шторах, римских шторах, москитных сетках и детской защите на окна. Общайся по-человечески, кратко, без канцелярита.
+  return `Ты — вежливый и живой консультант компании Master Roll Shtor (Астана), специализирующейся на жалюзи, ролл-шторах, римских шторах, москитных сетках и детской защите на окна. Общайся по-человечески, кратко, без канцелярита.
 
 О компании (упоминай к месту, не навязчиво):
 - Работа "под ключ" — от замера до установки
@@ -66,6 +69,11 @@ function buildSystemPrompt(catalogResults) {
 - Доставка по всему Казахстану
 - Дизайнерская консультация
 - Интеграция с "Умным домом" (для моделей с электроприводом)
+
+Понимание сообщений клиента:
+- Клиенты пишут размер по-разному: "2х2", "2м x 2м", "200 на 200", "два метра на два", "150x200см" и т.п. Понимай ЛЮБОЙ такой формат.
+- Если число похоже на метры (обычно 1-5) — переведи в сантиметры (умножь на 100). Если число уже похоже на сантиметры (обычно 50-500) — используй как есть.
+- Если сообщение клиента реально непонятно (не про размер, не про адрес, не про товар) — просто вежливо переспроси своими словами, не эскалируй на менеджера из-за одной неясной фразы.
 
 Сценарий диалога по заказу (следуй этим шагам по порядку):
 1. Клиент описывает, что ищет → найди подходящий товар в списке ниже и расскажи о нём.
@@ -86,7 +94,16 @@ function buildSystemPrompt(catalogResults) {
 
 Релевантные товары по текущему запросу:
 ${catalogText || 'Ничего не найдено по этому запросу.'}`;
+}
 
+async function getHistory(customerId) {
+  const { rows } = await pool.query(
+    `SELECT role, content FROM messages
+     WHERE customer_id = $1
+     ORDER BY created_at DESC
+     LIMIT 20`,
+    [customerId]
+  );
   return rows.reverse().map((r) => ({ role: r.role, content: r.content }));
 }
 
@@ -99,21 +116,14 @@ async function saveMessage(customerId, role, content, messageId = null) {
   );
 }
 
+// Убираем техническую часть "@c.us" из номера телефона — только для
+// отображения человеку (в уведомлениях), не используем это в реальной
+// отправке сообщений, где нужен полный chatId с @c.us
 function formatPhoneForDisplay(chatId) {
   return chatId ? chatId.replace('@c.us', '') : chatId;
 }
 
-async function getHistory(customerId) {
-     const { rows } = await pool.query(
-       `SELECT role, content FROM messages
-        WHERE customer_id = $1
-        ORDER BY created_at DESC
-        LIMIT 20`,
-       [customerId]
-     );
-     return rows.reverse().map((r) => ({ role: r.role, content: r.content }));
-}
-
+// Выполняем реальное действие, которое запросила модель
 async function executeTool(name, input, customerId, chatId) {
   if (name === 'create_order') {
     const { rows } = await pool.query(
@@ -124,15 +134,18 @@ async function executeTool(name, input, customerId, chatId) {
 
     const orderId = rows[0].id;
 
+    // Сразу уведомляем владельца/менеджера о новом заказе в его личный WhatsApp,
+    // чтобы не нужно было заходить в базу данных и проверять вручную
     await sendMessage(
       process.env.MANAGER_WHATSAPP_ID,
-      `🛒 Новый заказ #${orderId}\nТовар ID: ${input.product_id}\nРазмер: ${input.width_cm || '—'}x${input.height_cm || '—'} см\nАдрес: ${input.address}\nКлиент: ${chatId}`
+      `🛒 Новый заказ #${orderId}\nТовар ID: ${input.product_id}\nРазмер: ${input.width_cm || '—'}x${input.height_cm || '—'} см\nАдрес: ${input.address}\nКлиент: ${formatPhoneForDisplay(chatId)}`
     );
 
     return `Заказ #${orderId} успешно создан.`;
   }
 
   if (name === 'update_order_address') {
+    // Находим последний (самый свежий) заказ этого клиента
     const { rows } = await pool.query(
       `SELECT id FROM orders WHERE customer_id = $1 ORDER BY created_at DESC LIMIT 1`,
       [customerId]
@@ -151,7 +164,7 @@ async function executeTool(name, input, customerId, chatId) {
 
     await sendMessage(
       process.env.MANAGER_WHATSAPP_ID,
-      `📍 Адрес изменён в заказе #${orderId}\nНовый адрес: ${input.new_address}\nКлиент: ${chatId}`
+      `📍 Адрес изменён в заказе #${orderId}\nНовый адрес: ${input.new_address}\nКлиент: ${formatPhoneForDisplay(chatId)}`
     );
 
     return `Адрес в заказе #${orderId} обновлён на: ${input.new_address}`;
@@ -160,7 +173,7 @@ async function executeTool(name, input, customerId, chatId) {
   if (name === 'escalate_to_manager') {
     await sendMessage(
       process.env.MANAGER_WHATSAPP_ID,
-      `Клиент ${chatId} просит помощи менеджера. Причина: ${input.reason}`
+      `Клиент ${formatPhoneForDisplay(chatId)} просит помощи менеджера. Причина: ${input.reason}`
     );
     return 'Менеджер уведомлён и скоро подключится к диалогу.';
   }
@@ -168,6 +181,23 @@ async function executeTool(name, input, customerId, chatId) {
   return 'Неизвестный инструмент';
 }
 
+// Вызываем Claude с автоматическим повтором при временном превышении лимита
+// запросов (429) — вместо того чтобы бот "молчал", ждём немного и пробуем снова
+async function createMessageWithRetry(params, attempt = 1) {
+  try {
+    return await anthropic.messages.create(params);
+  } catch (err) {
+    if (err.status === 429 && attempt <= 3) {
+      const waitMs = attempt * 3000; // 3с, 6с, 9с
+      console.log(`Claude API: превышен лимит запросов, жду ${waitMs / 1000}с (попытка ${attempt})...`);
+      await new Promise((resolve) => setTimeout(resolve, waitMs));
+      return createMessageWithRetry(params, attempt + 1);
+    }
+    throw err;
+  }
+}
+
+// Главная функция: клиент написал сообщение — генерируем ответ
 async function generateReply(customerId, chatId, userText) {
   const catalogResults = await searchCatalog(userText);
   const system = buildSystemPrompt(catalogResults);
@@ -175,7 +205,7 @@ async function generateReply(customerId, chatId, userText) {
 
   let messages = [...history, { role: 'user', content: userText }];
 
-  let response = await anthropic.messages.create({
+  let response = await createMessageWithRetry({
     model: 'claude-sonnet-4-6',
     max_tokens: 1000,
     system,
@@ -183,6 +213,8 @@ async function generateReply(customerId, chatId, userText) {
     messages,
   });
 
+  // Модель может запросить вызов одного или НЕСКОЛЬКИХ инструментов сразу.
+  // Обрабатываем цикл: выполняем ВСЕ инструменты из ответа -> отдаём все результаты обратно модели -> получаем финальный текст.
   while (response.stop_reason === 'tool_use') {
     const toolUseBlocks = response.content.filter((b) => b.type === 'tool_use');
 
@@ -204,7 +236,7 @@ async function generateReply(customerId, chatId, userText) {
     messages.push({ role: 'assistant', content: response.content });
     messages.push({ role: 'user', content: toolResults });
 
-    response = await anthropic.messages.create({
+    response = await createMessageWithRetry({
       model: 'claude-sonnet-4-6',
       max_tokens: 1000,
       system,
