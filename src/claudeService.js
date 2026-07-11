@@ -91,6 +91,17 @@ async function saveMessage(customerId, role, content, messageId = null) {
   );
 }
 
+async function getHistory(customerId) {
+     const { rows } = await pool.query(
+       `SELECT role, content FROM messages
+        WHERE customer_id = $1
+        ORDER BY created_at DESC
+        LIMIT 20`,
+       [customerId]
+     );
+     return rows.reverse().map((r) => ({ role: r.role, content: r.content }));
+}
+
 async function executeTool(name, input, customerId, chatId) {
   if (name === 'create_order') {
     const { rows } = await pool.query(
