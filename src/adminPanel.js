@@ -19,7 +19,7 @@ function checkAuth(req, res, next) {
 
 router.get('/orders', checkAuth, async (req, res) => {
   const { rows } = await pool.query(`
-    SELECT o.id, o.status, o.width_cm, o.height_cm, o.address, o.created_at,
+    SELECT o.id, o.status, o.width_cm, o.height_cm, o.address, o.preferred_datetime, o.created_at,
            p.name AS product_name, p.price,
            c.whatsapp_id
     FROM orders o
@@ -61,7 +61,7 @@ router.get('/orders', checkAuth, async (req, res) => {
         : `<table>
         <tr>
           <th>№</th><th>Товар</th><th>Цена</th><th>Размер</th>
-          <th>Адрес</th><th>Клиент</th><th>Статус</th><th>Дата</th><th>Действие</th>
+          <th>Адрес</th><th>Замер</th><th>Клиент</th><th>Статус</th><th>Дата</th><th>Действие</th>
         </tr>
         ${rows
           .map(
@@ -72,6 +72,7 @@ router.get('/orders', checkAuth, async (req, res) => {
             <td>${o.price || '—'} тг</td>
             <td>${o.width_cm || '—'}x${o.height_cm || '—'} см</td>
             <td>${o.address}</td>
+            <td>${o.preferred_datetime || '—'}</td>
             <td>${o.whatsapp_id ? o.whatsapp_id.replace('@c.us', '') : '—'}</td>
             <td class="status-${o.status}">${o.status}</td>
             <td>${new Date(o.created_at).toLocaleString('ru-RU')}</td>

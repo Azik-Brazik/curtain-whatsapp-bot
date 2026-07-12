@@ -11,15 +11,16 @@ const tools = [
     name: 'create_order',
     description:
       'Создать заказ на шторы, когда клиент подтвердил выбор товара, размеры и адрес доставки.',
-    input_schema: {
+   input_schema: {
       type: 'object',
       properties: {
         product_id: { type: 'number', description: 'ID товара из каталога' },
         width_cm: { type: 'number', description: 'Ширина окна в см' },
         height_cm: { type: 'number', description: 'Высота окна в см' },
         address: { type: 'string', description: 'Адрес доставки/замера' },
+        preferred_datetime: { type: 'string', description: 'Удобная дата и время для выезда замерщика, например "завтра после 15:00" или "13 июля, 10:00"' },
       },
-      required: ['product_id', 'address'],
+      required: ['product_id', 'address', 'preferred_datetime'],
     },
   },
   {
@@ -74,7 +75,7 @@ function buildSystemPrompt(catalogResults) {
 2. Клиент описывает конкретный товар → найди подходящий в списке ниже и расскажи о нём (без цены, см. правило про цену ниже).
 3. Клиент проявил интерес ("да", "интересует", "нравится", "беру") → сам спроси размер окна (ширина и высота в см).
 4. Клиент назвал размер (в любом формате — "2х2", "200 на 200", "два метра") → пойми его как см и спроси адрес доставки/замера. Если размер выглядит нереалистично (например больше 10 метров) — вежливо переспроси в см, не эскалируй.
-5. Когда есть товар, размер и адрес → покажи итоговую сводку и спроси подтверждение.
+5. Клиент назвал адрес → спроси удобную дату и время для выезда замерщика.
 6. Клиент подтвердил сводку ("да", "верно") → ОБЯЗАТЕЛЬНО вызови create_order. Это заявка на бесплатный замер, финальный шаг, не эскалация.
 7. Клиент просит изменить адрес уже созданной заявки → вызови update_order_address.
 
@@ -121,16 +122,16 @@ function formatPhoneForDisplay(chatId) {
 async function executeTool(name, input, customerId, chatId) {
   if (name === 'create_order') {
     const { rows } = await pool.query(
-      `INSERT INTO orders (customer_id, product_id, width_cm, height_cm, address)
-       VALUES ($1,$2,$3,$4,$5) RETURNING id`,
-      [customerId, input.product_id, input.width_cm, input.height_cm, input.address]
+      `INSERT INTO orders (customer_id, product_id, width_cm, height_cm, address, preferred_datetime)
+       VALUES ($1,$2,$3,$4,$5,$6) RETURNING id`,
+      [customerId, input.product_id, input.width_cm, input.height_cm, input.address, input.preferred_datetime]
     );
 
     const orderId = rows[0].id;
 
     await sendMessage(
       process.env.MANAGER_WHATSAPP_ID,
-      `🛒 Новый заказ #${orderId}\nТовар ID: ${input.product_id}\nРазмер: ${input.width_cm || '—'}x${input.height_cm || '—'} см\nАдрес: ${input.address}\nКлиент: ${formatPhoneForDisplay(chatId)}`
+      `🛒 Новый заказ #${orderId}\nТовар ID: ${input.product_id}\nРазмер: ${input.width_cm || '—'}x${input.height_cm || '—'} см\nАдрес: ${input.address}\nЖелаемое время замера: ${input.preferred_datetime || 'не указано'}\nКлиент: ${formatPhoneForDisplay(chatId)}`
     );
 
     return `Заказ #${orderId} успешно создан.`;

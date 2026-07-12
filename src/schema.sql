@@ -47,6 +47,7 @@ CREATE TABLE IF NOT EXISTS orders (
     width_cm INTEGER,
     height_cm INTEGER,
     address TEXT,
+    preferred_datetime TEXT,
     status TEXT DEFAULT 'new',        -- new | confirmed | cancelled
     created_at TIMESTAMP DEFAULT NOW()
 );
