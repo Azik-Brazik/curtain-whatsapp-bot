@@ -176,11 +176,15 @@ async function createMessageWithRetry(params, attempt = 1) {
   try {
     return await anthropic.messages.create(params);
   } catch (err) {
-    if (err.status === 429 && attempt <= 5) {
-      const waitMs = attempt * 8000;
-      console.log(`Claude API: превышен лимит запросов, жду ${waitMs / 1000}с (попытка ${attempt})...`);
-      await new Promise((resolve) => setTimeout(resolve, waitMs));
-      return createMessageWithRetry(params, attempt + 1);
+    if (err.status === 429) {
+      console.log('Заголовки лимита от Anthropic:', JSON.stringify(err.headers || {}, null, 2));
+
+      if (attempt <= 5) {
+        const waitMs = attempt * 8000;
+        console.log(`Claude API: превышен лимит запросов, жду ${waitMs / 1000}с (попытка ${attempt})...`);
+        await new Promise((resolve) => setTimeout(resolve, waitMs));
+        return createMessageWithRetry(params, attempt + 1);
+      }
     }
     throw err;
   }
