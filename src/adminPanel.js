@@ -20,7 +20,7 @@ function checkAuth(req, res, next) {
 router.get('/orders', checkAuth, async (req, res) => {
   const { rows } = await pool.query(`
     SELECT o.id, o.status, o.width_cm, o.height_cm, o.address, o.preferred_datetime, o.created_at,
-           p.name AS product_name, p.price,
+           p.name AS product_name,
            c.whatsapp_id
     FROM orders o
     LEFT JOIN products p ON p.id = o.product_id
@@ -50,6 +50,7 @@ router.get('/orders', checkAuth, async (req, res) => {
       button { border: none; border-radius: 6px; padding: 6px 10px; cursor: pointer; font-size: 13px; color: white; }
       .btn-confirm { background: #16a34a; }
       .btn-cancel { background: #dc2626; }
+      .btn-delete { background: #6b7280; }
       button:disabled { background: #ccc; cursor: default; }
     </style>
   </head>
@@ -60,7 +61,7 @@ router.get('/orders', checkAuth, async (req, res) => {
         ? '<p class="empty">Заказов пока нет</p>'
         : `<table>
         <tr>
-          <th>№</th><th>Товар</th><th>Цена</th><th>Размер</th>
+          <th>№</th><th>Товар</th><th>Размер</th>
           <th>Адрес</th><th>Замер</th><th>Клиент</th><th>Статус</th><th>Дата</th><th>Действие</th>
         </tr>
         ${rows
@@ -69,7 +70,6 @@ router.get('/orders', checkAuth, async (req, res) => {
           <tr>
             <td>#${o.id}</td>
             <td>${o.product_name || '—'}</td>
-            <td>${o.price || '—'} тг</td>
             <td>${o.width_cm || '—'}x${o.height_cm || '—'} см</td>
             <td>${o.address}</td>
             <td>${o.preferred_datetime || '—'}</td>
@@ -84,6 +84,9 @@ router.get('/orders', checkAuth, async (req, res) => {
               <form method="POST" action="/admin/orders/${o.id}/status" style="display:inline">
                 <input type="hidden" name="status" value="cancelled">
                 <button class="btn-cancel" ${o.status === 'cancelled' ? 'disabled' : ''}>Отменить</button>
+              </form>
+              <form method="POST" action="/admin/orders/${o.id}/delete" style="display:inline" onsubmit="return confirm('Удалить заказ #${o.id} навсегда?');">
+                <button class="btn-delete">Удалить</button>
               </form>
             </td>
           </tr>`
@@ -107,6 +110,12 @@ router.post('/orders/:id/status', checkAuth, express.urlencoded({ extended: true
   }
 
   await pool.query('UPDATE orders SET status = $1 WHERE id = $2', [status, id]);
+  res.redirect('/admin/orders');
+});
+
+router.post('/orders/:id/delete', checkAuth, async (req, res) => {
+  const { id } = req.params;
+  await pool.query('DELETE FROM orders WHERE id = $1', [id]);
   res.redirect('/admin/orders');
 });
 
